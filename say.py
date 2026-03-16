@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-WSL2 TTS wrapper using piper-tts - mimics macOS 'say' command
+say4linux — macOS-style 'say' command for Linux/WSL2, powered by piper-tts.
+https://github.com/kd5ziy/say4linux
 """
 import os
 import sys
@@ -12,6 +13,14 @@ import argparse
 # Path to the virtual environment
 VENV_PATH = "/opt/piper-tts"
 PIPER_BIN = os.path.join(VENV_PATH, "bin", "piper")
+
+# Model search paths (checked in order)
+MODEL_DIRS = [
+    os.environ.get("SAY4LINUX_MODELS", ""),
+    os.path.expanduser("~/.local/share/say4linux/models"),
+    "/mnt/c/tts/models",
+]
+MODEL_DIRS = [d for d in MODEL_DIRS if d]
 
 def find_piper():
     """Locate piper binary - check venv first, then PATH"""
@@ -41,41 +50,43 @@ def get_text(args):
         sys.exit(1)
 
 def list_voices():
-    """List available voice models"""
-    base = "/mnt/c/tts/models"
-    if not os.path.exists(base):
-        print(f"No models found at {base}", file=sys.stderr)
-        return
-    
-    print("Available voices:")
-    for root, dirs, files in os.walk(base):
-        for f in files:
-            if f.endswith(".onnx") and not f.endswith(".json"):
-                rel = os.path.relpath(os.path.join(root, f), base)
-                # Extract voice name from path
-                parts = rel.split(os.sep)
-                if len(parts) >= 3:
-                    voice_name = f"{parts[0]}-{parts[1]}-{parts[2]}"
-                    print(f"  {voice_name}: {rel}")
+    """List available voice models from all model directories"""
+    found = False
+    for base in MODEL_DIRS:
+        if not os.path.exists(base):
+            continue
+        for root, dirs, files in os.walk(base):
+            for f in files:
+                if f.endswith(".onnx") and not f.endswith(".json"):
+                    if not found:
+                        print("Available voices:")
+                        found = True
+                    rel = os.path.relpath(os.path.join(root, f), base)
+                    parts = rel.split(os.sep)
+                    if len(parts) >= 3:
+                        voice_name = f"{parts[0]}-{parts[1]}-{parts[2]}"
+                        print(f"  {voice_name}: {rel}")
+    if not found:
+        print("No models found. Run download-voices.sh to get started.", file=sys.stderr)
 
 def get_model_path(voice_name):
-    """Convert voice name to model path"""
-    base = "/mnt/c/tts/models"
-    
+    """Convert voice name to model path, searching all model directories"""
     # If full path provided
     if voice_name.endswith(".onnx"):
         return voice_name, voice_name + ".json"
-    
-    # Try to find by voice name (e.g., "en_US-amy-medium")
-    for root, dirs, files in os.walk(base):
-        for f in files:
-            if f.endswith(".onnx") and not f.endswith(".json"):
-                if voice_name in f or voice_name in root:
-                    model = os.path.join(root, f)
-                    config = model + ".json"
-                    if os.path.exists(config):
-                        return model, config
-    
+
+    for base in MODEL_DIRS:
+        if not os.path.exists(base):
+            continue
+        for root, dirs, files in os.walk(base):
+            for f in files:
+                if f.endswith(".onnx") and not f.endswith(".json"):
+                    if voice_name in f or voice_name in root:
+                        model = os.path.join(root, f)
+                        config = model + ".json"
+                        if os.path.exists(config):
+                            return model, config
+
     return None, None
 
 def main():
