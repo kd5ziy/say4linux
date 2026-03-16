@@ -91,7 +91,7 @@ def get_model_path(voice_name):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Text-to-speech using piper-tts (WSL2)",
+        description="Text-to-speech using piper-tts (Linux/WSL2)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
