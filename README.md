@@ -160,7 +160,11 @@ The command searches for models in this order:
 
 ## Claude Code Integration
 
-`say` works perfectly as a [Claude Code](https://claude.com/claude-code) hook for audio notifications while coding. Add to `~/.claude/settings.json`:
+`say` works perfectly as a [Claude Code](https://claude.com/claude-code) hook for audio notifications while coding.
+
+### Hooks Setup
+
+Copy `examples/claude-hooks.json` into your Claude settings, or add hooks manually to `~/.claude/settings.json`:
 
 ```json
 {
@@ -186,9 +190,52 @@ The command searches for models in this order:
           { "type": "command", "command": "say 'Claude needs permission'" }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "say 'Command complete'" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "say 'Agent task complete'" }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "say 'Task completed'" }
+        ]
+      }
     ]
   }
 }
+```
+
+Available hook events: `Stop`, `Notification`, `PostToolUse`, `PreToolUse`, `SubagentStop`, `TaskCompleted`, `SessionStart`, `SessionEnd`, and more. See the full example in [`examples/claude-hooks.json`](examples/claude-hooks.json).
+
+### Skills (Slash Commands)
+
+This repo includes two Claude Code skills in `.claude/skills/`:
+
+| Command | Description |
+|---|---|
+| `/list-voices` | List all installed voices, grouped by language and quality |
+| `/say-test [voice] [text]` | Test a specific voice with sample text |
+
+To use these skills, clone this repo and open it with Claude Code — the skills are picked up automatically from `.claude/skills/`.
+
+```bash
+# Inside Claude Code:
+/list-voices
+/say-test en_GB-alba-medium "Testing the British voice"
 ```
 
 ## WSL2 Audio Setup
