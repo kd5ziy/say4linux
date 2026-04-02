@@ -61,7 +61,7 @@ bash download-voices.sh --all
 **3. Install the say command**
 
 ```bash
-mkdir -p ~/.local/bin
+mkdir -p ~/.local/bin ~/.local/share/say4linux
 cp say.py ~/.local/share/say4linux/say.py
 chmod +x ~/.local/share/say4linux/say.py
 ln -sf ~/.local/share/say4linux/say.py ~/.local/bin/say
@@ -223,10 +223,11 @@ Available hook events: `Stop`, `Notification`, `PostToolUse`, `PreToolUse`, `Sub
 
 ### Skills (Slash Commands)
 
-This repo includes two Claude Code skills in `.claude/skills/`:
+This repo includes three Claude Code skills in `.claude/skills/`:
 
 | Command | Description |
 |---|---|
+| `/say [text]` | Speak text aloud using say4linux |
 | `/list-voices` | List all installed voices, grouped by language and quality |
 | `/say-test [voice] [text]` | Test a specific voice with sample text |
 
@@ -236,6 +237,61 @@ To use these skills, clone this repo and open it with Claude Code — the skills
 # Inside Claude Code:
 /list-voices
 /say-test en_GB-alba-medium "Testing the British voice"
+```
+
+## MCP Server
+
+The MCP (Model Context Protocol) server lets any MCP-compatible client use say4linux as a tool — Claude Code, Claude Desktop, Cursor, and more.
+
+### Setup
+
+```bash
+# Install the MCP server dependencies
+bash setup-mcp.sh
+```
+
+### Tools Provided
+
+| Tool | Description |
+|---|---|
+| `say` | Speak text aloud on the host machine |
+| `list_available_voices` | List all installed voice models |
+| `save_audio` | Synthesize text to a WAV file |
+
+### Registering with Claude Code
+
+**Project-local** (auto-detected when you open this repo):
+
+The `.mcp.json` file in this repo registers the server automatically. Just run `bash setup-mcp.sh` first, then open the project in Claude Code.
+
+**Global** (available from any project):
+
+```bash
+claude mcp add -s user say4linux /path/to/say4linux/mcp_venv/bin/python /path/to/say4linux/mcp_server.py
+```
+
+### Registering with Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "say4linux": {
+      "command": "/path/to/say4linux/mcp_venv/bin/python",
+      "args": ["/path/to/say4linux/mcp_server.py"]
+    }
+  }
+}
+```
+
+### Registering with Other MCP Clients
+
+Any MCP-compatible client can use the server via stdio transport:
+
+```
+command: /path/to/say4linux/mcp_venv/bin/python
+args: /path/to/say4linux/mcp_server.py
 ```
 
 ## WSL2 Audio Setup

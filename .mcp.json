@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "say4linux": {
+      "command": "./mcp_venv/bin/python",
+      "args": ["./mcp_server.py"],
+      "env": {}
+    }
+  }
+}
