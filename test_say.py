@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for say4linux."""
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -121,6 +122,29 @@ class TestSynthesize(unittest.TestCase):
         result = say.synthesize("hello", voice="nonexistent-voice")
         self.assertEqual(result["status"], "error")
         self.assertIn("not found", result["error"])
+
+    def test_rate_zero_returns_error(self):
+        result = say.synthesize("hello", rate=0)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("Invalid rate", result["error"])
+
+    def test_rate_negative_returns_error(self):
+        result = say.synthesize("hello", rate=-1)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("Invalid rate", result["error"])
+
+    def test_rate_too_high_returns_error(self):
+        result = say.synthesize("hello", rate=11)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("Invalid rate", result["error"])
+
+    def test_rate_valid_edges_accepted(self):
+        """Rates 0.1 and 10.0 should pass validation (may fail later without piper)."""
+        for rate in [0.1, 0.5, 2.0, 10.0]:
+            result = say.synthesize("hello", rate=rate)
+            # Should get past rate validation — error will be about piper or voice, not rate
+            if result["status"] == "error":
+                self.assertNotIn("Invalid rate", result["error"])
 
     @patch("say.find_piper", return_value="/usr/bin/piper")
     @patch("say.get_model_path", return_value=("/models/voice.onnx", "/models/voice.onnx.json"))
@@ -285,6 +309,146 @@ class TestSynthesizeIntegration(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertIn("not found", result["error"])
         self.assertFalse(os.path.exists(wav) and os.path.getsize(wav) > 0)
+
+    def test_keep_flag_preserves_temp_wav(self):
+        result = say.synthesize(
+            "Keep flag test.", voice=self.voice, keep=True
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("wav_path", result)
+        self.assertTrue(os.path.exists(result["wav_path"]), "WAV should still exist with keep=True")
+        # Clean up manually
+        os.unlink(result["wav_path"])
+
+
+class TestMain(unittest.TestCase):
+    """Tests for main() via subprocess — validates CLI arg handling."""
+
+    def _run_say(self, *args):
+        """Run say.py as a subprocess and return (returncode, stdout, stderr)."""
+        result = subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(__file__), "say.py")] + list(args),
+            capture_output=True, text=True, timeout=30
+        )
+        return result.returncode, result.stdout, result.stderr
+
+    def test_list_voices(self):
+        rc, stdout, stderr = self._run_say("-v", "list")
+        self.assertEqual(rc, 0)
+        # Should print voice names or "No models found"
+        self.assertTrue("voices" in stdout.lower() or "no models" in stderr.lower())
+
+    def test_bad_voice_exits_with_error(self):
+        rc, stdout, stderr = self._run_say("-v", "totally_fake_xyz", "hello")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("not found", stderr.lower())
+
+    def test_no_text_no_tty_exits_cleanly(self):
+        """When stdin is not a tty and empty (subprocess), exits 0 with no output."""
+        rc, stdout, stderr = self._run_say()
+        self.assertEqual(rc, 0)
+
+    def test_invalid_rate_zero(self):
+        rc, stdout, stderr = self._run_say("-r", "0", "hello")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("rate", stderr.lower())
+
+    def test_invalid_rate_negative(self):
+        rc, stdout, stderr = self._run_say("-r", "-1", "hello")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("rate", stderr.lower())
+
+
+@unittest.skipUnless(piper_available(), "piper not installed or no voices available")
+class TestMainIntegration(unittest.TestCase):
+    """Integration tests for main() that produce real audio."""
+
+    def _run_say(self, *args):
+        result = subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(__file__), "say.py")] + list(args),
+            capture_output=True, text=True, timeout=30
+        )
+        return result.returncode, result.stdout, result.stderr
+
+    def test_output_to_file(self):
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            wav = f.name
+        try:
+            rc, stdout, stderr = self._run_say("-o", wav, "Output test")
+            self.assertEqual(rc, 0)
+            self.assertIn("Audio saved to", stdout)
+            self.assertGreater(os.path.getsize(wav), 100)
+        finally:
+            if os.path.exists(wav):
+                os.unlink(wav)
+
+    def test_keep_flag_prints_path(self):
+        rc, stdout, stderr = self._run_say("--keep", "Keep test")
+        self.assertEqual(rc, 0)
+        self.assertIn("Audio saved to", stdout)
+
+
+class TestMCPTools(unittest.TestCase):
+    """Tests for MCP server tool functions."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Import MCP tools — add mcp_venv to path if needed, skip if unavailable
+        try:
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            venv_site = os.path.join(project_dir, "mcp_venv", "lib")
+            if os.path.isdir(venv_site):
+                # Find the python3.x site-packages dir inside the venv
+                for d in os.listdir(venv_site):
+                    sp = os.path.join(venv_site, d, "site-packages")
+                    if os.path.isdir(sp) and sp not in sys.path:
+                        sys.path.insert(0, sp)
+            if project_dir not in sys.path:
+                sys.path.insert(0, project_dir)
+            from mcp_server import say as mcp_say, list_available_voices, save_audio
+            from mcp.server.fastmcp.exceptions import ToolError
+            cls.mcp_say = staticmethod(mcp_say)
+            cls.list_available_voices = staticmethod(list_available_voices)
+            cls.save_audio = staticmethod(save_audio)
+            cls.ToolError = ToolError
+        except ImportError:
+            raise unittest.SkipTest("mcp package not installed — run setup-mcp.sh")
+
+    @patch("mcp_server.synthesize", return_value={"status": "error", "error": "Voice 'bad' not found"})
+    def test_say_raises_tool_error_on_failure(self, mock_synth):
+        with self.assertRaises(self.ToolError):
+            self.mcp_say("hello", voice="bad")
+
+    @patch("mcp_server.synthesize", return_value={"status": "ok", "played": True})
+    def test_say_returns_spoke_on_success(self, mock_synth):
+        result = self.mcp_say("hello world")
+        self.assertIn("Spoke", result)
+
+    @patch("mcp_server.list_voices", return_value=[])
+    def test_list_voices_raises_on_empty(self, mock_list):
+        with self.assertRaises(self.ToolError):
+            self.list_available_voices()
+
+    @patch("mcp_server.list_voices", return_value=[
+        {"name": "en_US-amy-medium", "path": "en_US/amy/medium/voice.onnx",
+         "full_path": "/secret/path/voice.onnx"},
+    ])
+    def test_list_voices_strips_full_path(self, mock_list):
+        result = self.list_available_voices()
+        self.assertEqual(len(result), 1)
+        self.assertIn("name", result[0])
+        self.assertIn("path", result[0])
+        self.assertNotIn("full_path", result[0])
+
+    @patch("mcp_server.synthesize", return_value={"status": "error", "error": "piper failed"})
+    def test_save_audio_raises_tool_error_on_failure(self, mock_synth):
+        with self.assertRaises(self.ToolError):
+            self.save_audio("hello", "/tmp/test.wav")
+
+    @patch("mcp_server.synthesize", return_value={"status": "ok", "wav_path": "/tmp/out.wav"})
+    def test_save_audio_returns_path_on_success(self, mock_synth):
+        result = self.save_audio("hello", "/tmp/out.wav")
+        self.assertIn("/tmp/out.wav", result)
 
 
 if __name__ == "__main__":

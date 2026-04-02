@@ -21,6 +21,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from say import list_voices, synthesize
 
 mcp = FastMCP("say4linux")
@@ -38,7 +39,7 @@ def say(text: str, voice: str = "en_US-amy-medium", rate: float = 1.0) -> str:
     """
     result = synthesize(text, voice=voice, rate=rate)
     if result["status"] == "error":
-        return f"Error: {result['error']}"
+        raise ToolError(result["error"])
     if result.get("warning"):
         return f"Warning: {result['warning']}"
     return f"Spoke: {text[:100]}{'...' if len(text) > 100 else ''}"
@@ -58,8 +59,8 @@ def list_available_voices() -> list[dict]:
     """
     voices = list_voices()
     if not voices:
-        return [{"error": "No voices installed. Run download-voices.sh to install voices."}]
-    return voices
+        raise ToolError("No voices installed. Run download-voices.sh to install voices.")
+    return [{"name": v["name"], "path": v["path"]} for v in voices]
 
 
 @mcp.tool()
@@ -79,7 +80,7 @@ def save_audio(
     """
     result = synthesize(text, voice=voice, rate=rate, output=output_path)
     if result["status"] == "error":
-        return f"Error: {result['error']}"
+        raise ToolError(result["error"])
     return f"Audio saved to: {result['wav_path']}"
 
 

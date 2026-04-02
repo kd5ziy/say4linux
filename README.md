@@ -61,7 +61,7 @@ bash download-voices.sh --all
 **3. Install the say command**
 
 ```bash
-mkdir -p ~/.local/bin
+mkdir -p ~/.local/bin ~/.local/share/say4linux
 cp say.py ~/.local/share/say4linux/say.py
 chmod +x ~/.local/share/say4linux/say.py
 ln -sf ~/.local/share/say4linux/say.py ~/.local/bin/say
@@ -223,7 +223,7 @@ Available hook events: `Stop`, `Notification`, `PostToolUse`, `PreToolUse`, `Sub
 
 ### Skills (Slash Commands)
 
-This repo includes two Claude Code skills in `.claude/skills/`:
+This repo includes three Claude Code skills in `.claude/skills/`:
 
 | Command | Description |
 |---|---|

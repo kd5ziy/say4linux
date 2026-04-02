@@ -96,7 +96,7 @@ def get_model_path(voice_name):
 
     return None, None
 
-def synthesize(text, voice="en_US-amy-medium", rate=1.0, output=None):
+def synthesize(text, voice="en_US-amy-medium", rate=1.0, output=None, keep=False):
     """Synthesize text to speech. Plays audio or saves to file.
 
     Args:
@@ -104,11 +104,15 @@ def synthesize(text, voice="en_US-amy-medium", rate=1.0, output=None):
         voice: Voice model name (e.g. en_US-amy-medium)
         rate: Speaking rate (0.5-2.0, default 1.0)
         output: Output WAV path. If None, plays audio on host.
+        keep: If True and no output specified, keep the temp WAV file.
 
     Returns:
         dict with 'status' ('ok' or 'error'), and optionally
         'wav_path', 'played', 'warning', or 'error' message.
     """
+    if rate <= 0 or rate > 10:
+        return {"status": "error", "error": f"Invalid rate {rate}: must be between 0.1 and 10.0"}
+
     piper = find_piper()
     if not piper:
         return {"status": "error", "error": "'piper' not found. Run install.sh or install piper-tts."}
@@ -124,7 +128,7 @@ def synthesize(text, voice="en_US-amy-medium", rate=1.0, output=None):
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         wav = tmp.name
         tmp.close()
-        cleanup = True
+        cleanup = not keep
 
     try:
         cmd = [piper, "--model", model, "--config", config, "--output_file", wav]
@@ -142,7 +146,10 @@ def synthesize(text, voice="en_US-amy-medium", rate=1.0, output=None):
         player = shutil.which("paplay") or shutil.which("aplay")
         if player:
             subprocess.run([player, wav], check=False, stderr=subprocess.DEVNULL)
-            return {"status": "ok", "played": True}
+            result = {"status": "ok", "played": True}
+            if keep:
+                result["wav_path"] = wav
+            return result
         else:
             cleanup = False
             return {"status": "ok", "wav_path": wav, "warning": "No audio player found (paplay/aplay)"}
@@ -168,7 +175,12 @@ Examples:
     parser.add_argument('-v', '--voice', default='en_US-amy-medium',
                         help='Voice model name or "list" to show available voices')
     parser.add_argument('-o', '--output', help='Output WAV file (skip playback)')
-    parser.add_argument('-r', '--rate', type=float, default=1.0,
+    def valid_rate(value):
+        f = float(value)
+        if f <= 0 or f > 10:
+            raise argparse.ArgumentTypeError(f"rate must be between 0.1 and 10.0, got {value}")
+        return f
+    parser.add_argument('-r', '--rate', type=valid_rate, default=1.0,
                         help='Speaking rate (0.5-2.0, default: 1.0)')
     parser.add_argument('--keep', action='store_true',
                         help='Keep temporary WAV file for debugging')
@@ -192,7 +204,7 @@ Examples:
     if not text:
         sys.exit(0)
 
-    result = synthesize(text, voice=args.voice, rate=args.rate, output=args.output)
+    result = synthesize(text, voice=args.voice, rate=args.rate, output=args.output, keep=args.keep)
 
     if result["status"] == "error":
         print(f"ERROR: {result['error']}", file=sys.stderr)
@@ -206,6 +218,8 @@ Examples:
         print(f"WARNING: {result['warning']}", file=sys.stderr)
         if result.get("wav_path"):
             print(f"Audio saved to: {result['wav_path']}", file=sys.stderr)
+    elif args.keep and result.get("wav_path"):
+        print(f"Audio saved to: {result['wav_path']}")
 
 if __name__ == "__main__":
     main()
